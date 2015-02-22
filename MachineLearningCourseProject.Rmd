@@ -6,11 +6,12 @@ date: "Saturday, February 21, 2015"
 output: html_document
 ---
 
-```{r setup}
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE}
 library(ggplot2)
 library(GGally)
 library(caret)
 library(knitr)
+require(randomForest)
 
 set.seed(12357)
 projectRoot <- "I:\\Documents\\Education\\Coursera\\JHU-Assigned-Repos\\jhu-mach-learn-2\\"
@@ -222,7 +223,7 @@ rpartProbePredicted <- predict(rpartFit, probePreprocessed)
 rpartCM <- confusionMatrix(rpartProbePredicted, probePreprocessed$classe)
 ```
 
-#### Estimated Out-of-sample Error (CART): `r rpartCM$overall["Accuracy"] * 100`%
+#### Estimated Out-of-sample Accuracy (CART): `r rpartCM$overall["Accuracy"] * 100`%
 
 ```{r}
 rpartCM$table
@@ -255,13 +256,13 @@ gbmKappaProbePredicted <- predict(gbmKappaFit, probePreprocessed)
 gbmKCM <- confusionMatrix(gbmKappaProbePredicted, probePreprocessed$classe)
 ```
 
-#### Estimated Out-Of-Sample Error: Optimized for Accuracy `r gbmACM$overall["Accuracy"] * 100`%
+#### Estimated Out-Of-Sample Accuracy: Optimized for Accuracy `r gbmACM$overall["Accuracy"] * 100`%
 
 ```{r}
 gbmACM$table
 ```
 
-#### Estimated Out-Of-Sample Error: Optimized for Kappa Statistic `r gbmKCM$overall["Accuracy"] * 100`%
+#### Estimated Out-Of-Sample Accuracy: Optimized for Kappa Statistic `r gbmKCM$overall["Accuracy"] * 100`%
 
 ```{r}
 gbmKCM$table
@@ -274,7 +275,6 @@ Here is a vanilla implementation of a random forests model. This produced the be
 http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr
 
 ```{r}
-require(randomForest)
 doRf <- F # Build the model again?
 if(doRf){
   rfFit <- train(classe ~ ., data=modelPreprocessed, method="rf", prox=T)
@@ -286,7 +286,7 @@ rfProbePredicted <- predict(rfFit, probePreprocessed)
 rfCM <- confusionMatrix(rfProbePredicted, probePreprocessed$classe)
 ```
 
-#### Estimated Out-Of-Sample Error: Random Forests `r rfCM$overall["Accuracy"] * 100`%
+#### Estimated Out-Of-Sample Accuracy: Random Forests `r rfCM$overall["Accuracy"] * 100`%
 
 ```{r}
 rfCM$table
