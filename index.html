@@ -59,16 +59,6 @@ if (window.hljs && document.readyState && document.readyState === "complete") {
 </div>
 
 
-<pre class="r"><code>library(ggplot2)
-library(GGally)</code></pre>
-<pre><code>## Warning: package 'GGally' was built under R version 3.1.2</code></pre>
-<pre class="r"><code>library(caret)</code></pre>
-<pre><code>## Loading required package: lattice</code></pre>
-<pre class="r"><code>library(knitr)
-
-set.seed(12357)
-projectRoot &lt;- &quot;I:\\Documents\\Education\\Coursera\\JHU-Assigned-Repos\\jhu-mach-learn-2\\&quot;
-modelDir &lt;- paste0(projectRoot, &quot;models\\&quot;)</code></pre>
 <div id="executive-summary" class="section level1">
 <h1>Executive Summary</h1>
 <p>A random forest model was used to predict the correctness of form for individuals performing dumbbell curls. The data considered was collected from 9-axis inertial measurement units by the Human Activity Recognition project. A high degree of disimilarity was seen between measurements taken from individuals; these differences are presumably due to the differing orientations of the inertial sensors on the subjects as worn during exercise.</p>
@@ -247,8 +237,8 @@ rpartProbePredicted &lt;- predict(rpartFit, probePreprocessed)</code></pre>
 <pre><code>## Loading required package: rpart</code></pre>
 <pre class="r"><code>rpartCM &lt;- confusionMatrix(rpartProbePredicted, probePreprocessed$classe)</code></pre>
 </div>
-<div id="estimated-out-of-sample-error-cart-39.0053" class="section level4">
-<h4>Estimated Out-of-sample Error (CART): 39.0053%</h4>
+<div id="estimated-out-of-sample-accuracy-cart-39.0053" class="section level4">
+<h4>Estimated Out-of-sample Accuracy (CART): 39.0053%</h4>
 <pre class="r"><code>rpartCM$table</code></pre>
 <pre><code>##           Reference
 ## Prediction    A    B    C    D    E
@@ -295,8 +285,8 @@ gbmAccProbePredicted &lt;- predict(gbmAccFit, probePreprocessed)</code></pre>
 gbmKappaProbePredicted &lt;- predict(gbmKappaFit, probePreprocessed)
 gbmKCM &lt;- confusionMatrix(gbmKappaProbePredicted, probePreprocessed$classe)</code></pre>
 </div>
-<div id="estimated-out-of-sample-error-optimized-for-accuracy-74.6892" class="section level4">
-<h4>Estimated Out-Of-Sample Error: Optimized for Accuracy 74.6892%</h4>
+<div id="estimated-out-of-sample-accuracy-optimized-for-accuracy-74.6892" class="section level4">
+<h4>Estimated Out-Of-Sample Accuracy: Optimized for Accuracy 74.6892%</h4>
 <pre class="r"><code>gbmACM$table</code></pre>
 <pre><code>##           Reference
 ## Prediction    A    B    C    D    E
@@ -306,8 +296,8 @@ gbmKCM &lt;- confusionMatrix(gbmKappaProbePredicted, probePreprocessed$classe)</
 ##          D  113   54   31  733   58
 ##          E   39   51   25   21  763</code></pre>
 </div>
-<div id="estimated-out-of-sample-error-optimized-for-kappa-statistic-74.3655" class="section level4">
-<h4>Estimated Out-Of-Sample Error: Optimized for Kappa Statistic 74.3655%</h4>
+<div id="estimated-out-of-sample-accuracy-optimized-for-kappa-statistic-74.3655" class="section level4">
+<h4>Estimated Out-Of-Sample Accuracy: Optimized for Kappa Statistic 74.3655%</h4>
 <pre class="r"><code>gbmKCM$table</code></pre>
 <pre><code>##           Reference
 ## Prediction    A    B    C    D    E
@@ -321,10 +311,6 @@ gbmKCM &lt;- confusionMatrix(gbmKappaProbePredicted, probePreprocessed$classe)</
 <h4>Algorithm 3: Random Forests (Bagging)</h4>
 <p>Here is a vanilla implementation of a random forests model. This produced the best results. The default implementation uses the Gini coefficient to optimize the out-of-bag error of the model. Further cross-validation is not necessary because error is estimated internally by the training algorithm.</p>
 <p><a href="http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr">http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr</a></p>
-<pre class="r"><code>require(randomForest)</code></pre>
-<pre><code>## Loading required package: randomForest
-## randomForest 4.6-10
-## Type rfNews() to see new features/changes/bug fixes.</code></pre>
 <pre class="r"><code>doRf &lt;- F # Build the model again?
 if(doRf){
   rfFit &lt;- train(classe ~ ., data=modelPreprocessed, method=&quot;rf&quot;, prox=T)
@@ -335,8 +321,8 @@ if(doRf){
 rfProbePredicted &lt;- predict(rfFit, probePreprocessed)
 rfCM &lt;- confusionMatrix(rfProbePredicted, probePreprocessed$classe)</code></pre>
 </div>
-<div id="estimated-out-of-sample-error-random-forests-95.9462" class="section level4">
-<h4>Estimated Out-Of-Sample Error: Random Forests 95.9462%</h4>
+<div id="estimated-out-of-sample-accuracy-random-forests-95.9462" class="section level4">
+<h4>Estimated Out-Of-Sample Accuracy: Random Forests 95.9462%</h4>
 <pre class="r"><code>rfCM$table</code></pre>
 <pre><code>##           Reference
 ## Prediction    A    B    C    D    E
