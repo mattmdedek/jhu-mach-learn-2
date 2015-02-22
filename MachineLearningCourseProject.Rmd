@@ -1,0 +1,344 @@
+---
+title: "Practical Machine Learning Course Project"
+subtitle: "Johns Hopkins University Coursera"
+author: "Matthew Dedek"
+date: "Saturday, February 21, 2015"
+output: html_document
+---
+
+```{r setup}
+library(ggplot2)
+library(GGally)
+library(caret)
+library(knitr)
+
+set.seed(12357)
+projectRoot <- "I:\\Documents\\Education\\Coursera\\JHU-Assigned-Repos\\jhu-mach-learn-2\\"
+modelDir <- paste0(projectRoot, "models\\")
+```
+
+# Executive Summary
+
+A random forest model was used to predict the correctness of form for individuals performing dumbbell curls. The data considered was collected from 9-axis inertial measurement units by the Human Activity Recognition project. A high degree of disimilarity was seen between measurements taken from individuals; these differences are presumably due to the differing orientations of the inertial sensors on the subjects as worn during exercise.
+
+Principal components were extracted from the data as the pre-processing step. Then three models were considered: 
+
+1 Classification and regression trees (CART, rpart)
+2 Stochastic Gradient Boosting (gbm) with 10-fold cross validation
+3 Random Forest (rf)
+
+The random forest model produced the best results with an estimated 95.9% out of sample accuracy. Out-of-sample accuracy was estimated by predicting on 30% of the provided training data. 
+
+# Introduction
+
+The subject of this course project is the creation of a predictive model for dumbell curl exercise form. The data being evaluated is a weightlifting dataset from the Human Activity Recognition (HAR) project conducted at LES (Velloso 2013).
+
+This data set consists of measurements from 9 degrees of freedom inertial measurement units (IMU). The IMU sensors provide three-axis acceleration, gyroscope and magnetometer data. Readings were collected from four IMUs placed on the belt, glove, armband and dumbell of six individuals as they executed 10 repititions of dumbell curves according to five variations in exercise form. One of forms was correct, the other four were common mistakes made by weight training novices. The forms were assigned class names A-E:
+
+* A: Correct form
+* B: Throwing the elbows to the front
+* C: Lifting the dumbell only halfway
+* D: Lowering the dumbell only halfway
+* E: Throwing the hips to the front
+
+The goal of this project is to create a predictive model on the HAR project data set which will accurately classify movements captured in new IMU measurements as one of these five forms.
+
+# Cleaning and Splitting Data
+
+Training and testing data sets were provided by Johns Hopkins University; these files are saved in the 'data' directory of this project. The testing data set will be used to evaluate the performance of the final model. In addition, the training data set will be split into two subsets: a 'probe' data set for accuracy prediction and a 'model' set for model training. The model building set will consist of 70% of the training data with an equal representation of each subject (column 'user_name') and each exercise form (column 'classe').
+
+The data is loaded and split here:
+
+```{r}
+testFp <- paste0(projectRoot, "data/pml-testing.csv")
+trainFp <- paste0(projectRoot, "data/pml-training.csv")
+
+# Function to load data file and drop unwanted columns
+loadFile <- function(fp){
+  # List of columns that will not be used for prediction.
+  # These are time stamps, time window information and
+  # the first, unnamed column containing the observation number.
+  # Raw timestamp units: raw_timestamp_part_1 = seconds, raw_timestamp_part_2 = microseconds.
+  excluded_cols <- c("X",
+                     "cvtd_timestamp",
+                     "raw_timestamp_part_1",
+                     "raw_timestamp_part_2",
+                     "new_window",
+                     "num_window"
+                     )
+  
+  df <- read.csv(fp, na.strings=c("NA", ""), header=T)
+  df <- df[,!(colnames(df) %in% excluded_cols)]
+  # Fix misspelling of pitch:
+  colnames(df) <- gsub('picth', 'pitch', colnames(df))
+  # Remove columns containing data aggregated over measurement windows
+  # because these data are null in the test set
+  colClasses <- classifyColnames(df)
+  df <- df[,colClasses != 'aggregate']
+  
+  return(df)
+}
+
+# Function to classify data set columns by type.
+# returns vector specifying column data type as either
+# raw or aggregate - whether the observation is read
+# directly from a IMU or whether it is a calculated value
+# from an observation window.
+classifyColnames <- function(df){
+  # columns with names that start with any of the following
+  # strings are calculated over 1 second windows. They are labeled
+  # as 'aggregate' and are excluded from the predictor space.
+  agg_starts <- c("kurtosis",
+    "skewness",
+    "max",
+    "min",
+    "amplitude",
+    "var",
+    "avg",
+    "stddev"
+  )
+  calc_starts <- c("total", "roll", "pitch", "yaw")
+  meta_starts <- c("user_name", "classe")
+  cc <- rep("raw", length(colnames(df)))
+  for(a in agg_starts){
+    cc <- ifelse(grepl(paste("^", a, ".*", sep=""), colnames(df)), "aggregate", cc)
+  }
+  for(a in calc_starts){
+    cc <- ifelse(grepl(paste("^", a, ".*", sep=""), colnames(df)), "calculated", cc)
+  }
+  for(a in meta_starts){
+    cc <- ifelse(grepl(paste("^", a, ".*", sep=""), colnames(df)), "meta", cc)
+  }
+  return(cc)
+}
+
+# Load training and test data from files
+allTrainDf <- loadFile(trainFp)
+testDf <- loadFile(testFp)
+
+# Put 30% of the training data into a probe set.
+# Use the user name and the exercise classification as separating outcomes
+inTrain <- createDataPartition(paste(allTrainDf$classe, allTrainDf$user_name), p=0.7, list=F)
+modelDf <- allTrainDf[inTrain,]
+probeDf <- allTrainDf[-inTrain,]
+
+# Pull predictors out into their own data.frames
+modelPredictors <- modelDf[,!(colnames(modelDf) %in% c('user_name', 'classe'))]
+probePredictors <- probeDf[,!(colnames(probeDf) %in% c('user_name', 'classe'))]
+testPredictors <- testDf[,!(colnames(testDf) %in% c('user_name', 'problem_id'))]
+```
+
+# Exploration
+
+I generated plots for the output of each sensor for each IMU on each subject as well as the computed Euler angle data (yaw, pitch and roll) as part of the exploratory data analysis. This generated 16 charts per user, 96 in total.
+
+Here is the code used for exploration, which is not included in this report to save space.
+
+```{r, results="asis", eval=FALSE}
+sensorLocations <- c("belt", "arm", "forearm", "dumbbell")
+users <- unique(allTrainDf$user_name)
+sensorTypes <- c("gyros", "accel", "magnet")
+classCols <- list("A"="green", "B"="red", "C"="orange", "D"="brown", "E"="black")
+
+for(s in sensorLocations){
+  for(u in users){
+    print(paste("<h1>", u, "Roll, Pitch, Yaw", s, "</h1>"))
+    x_col <- paste("roll", s, sep="_")
+    y_col <- paste("pitch", s, sep="_")
+    z_col <- paste("yaw", s, sep="_")
+    print(ggpairs(allTrainDf[allTrainDf$user_name == u,c(x_col,y_col,z_col, 'classe')], colour='classe'))
+  }
+  for(t in sensorTypes){
+    for(u in users){
+      print(paste("<h1>", s, t, u, "</h1>"))
+      x_col <- paste(t, s, "x", sep="_")
+      y_col <- paste(t, s, "y", sep="_")
+      z_col <- paste(t, s, "z", sep="_")
+      print(ggpairs(allTrainDf[allTrainDf$user_name == u,c(x_col,y_col,z_col, 'classe')], colour='classe'))
+    }
+  }
+}
+
+```
+
+# Model Building
+
+### Selection of Predictors
+
+As touched upon when loading the data, I chose to ignore all of the aggregate variables in the data set. (ie: kurtosis, min, max, etc) since these were calculated by the authors based on time intervals inconsistently represented in the data set provided by JHU for this assignment.
+
+In addition, I looked for predictors with near zero variance as described in the caret package article on Pre-Processing (http://topepo.github.io/caret/preprocess.html). I found that none of the predictors had near zero variance. Therefore all predictors are included.
+
+```{r}
+# Code to identify variables with non-zero variance
+nzv <- nearZeroVar(modelDf, saveMetrics=T)
+sum(nzv$nzv)
+```
+
+### Pre-processing
+
+Some variables in the data set are in units of degrees, while others are electrical signals. In order to avoid bias due to the different scales, each variable will be centered and scaled. Principal component Analysis will also be used with a threshold of cumulative percent variance of 80%.
+
+```{r}
+pcaPreProcessor <- preProcess(modelPredictors, method=c("center", "scale", "pca"), thresh=0.8, verbose=F)
+modelPreprocessedPredictors <- predict(pcaPreProcessor, modelPredictors)
+modelPreprocessed <- cbind(modelPreprocessedPredictors, data.frame(classe=modelDf$classe))
+probePreprocessedPredictors <- predict(pcaPreProcessor, probePredictors)
+probePreprocessed <- cbind(probePreprocessedPredictors, data.frame(classe=probeDf$classe))
+testPreprocessedPredictors <- predict(pcaPreProcessor, testPredictors)
+testPreprocessed <- cbind(testPreprocessedPredictors, data.frame(classe=rep("?", nrow(testDf)), problemId=testDf$problem_id))
+```
+
+#### Principal Components
+
+Much of the variation is captured in the first two principal components, however, this variation is mainly correlated with the subject. I think this is likely because each subject was wearing the sensors in a slightly different orientation.
+
+```{r}
+plotDf <- cbind(probePreprocessed, data.frame(subject=probeDf$user_name))
+ggplot(aes(x=PC1, y=PC2, color=subject, shape=classe), data=plotDf) + 
+  geom_point() + 
+  ggtitle("First Two Principal Components")
+```
+
+### Modeling Algorithms
+
+I estimated the expected out-of-sample performance for three candidate models using the accuracy of predictions on the probe dataset. The modelling algorithms that I tried were CART (classification and regression trees), GBM (Stochastic Gradient Boosting) and random forests. The random forests produced the best results.
+
+The GBM and Random Forest models took a very long time to build, so they have been saved in .Rda files and reloaded for repeated knitr runs.
+
+#### Baseline Algorithm: Classification and Regression Trees (CART)
+
+Basic regression trees do not perform well on this dataset.
+
+```{r}
+doRPart = F # rebuild model?
+if(doRPart){
+  rpartFit <- train(classe ~ ., data=modelPreprocessed, method="rpart")
+  save(rpartFit, file=paste(modelDir, "rpartFit.Rda", sep=""))
+} else {
+  load(paste(modelDir, "rpartFit.Rda", sep=""))  
+}
+rpartProbePredicted <- predict(rpartFit, probePreprocessed)
+rpartCM <- confusionMatrix(rpartProbePredicted, probePreprocessed$classe)
+```
+
+#### Estimated Out-of-sample Error (CART): `r rpartCM$overall["Accuracy"] * 100`%
+
+```{r}
+rpartCM$table
+```
+
+#### Algorithm 2: Stochastic Gradient Boosting (gbm)
+
+Here I tried a Stochastic Gradient Boosting model tuned with 5 repeats of 10-fold cross validation. 
+
+Two gbm models were built for comparison. One was optimized for accuracy, the other for the Kappa statistic. Both resulted in similar accuracy (approximately 74%)
+
+```{r}
+tControl <- trainControl(method="repeatedcv", number=10, repeats=5)
+
+doGbm <- F # rebuild the models?
+if(doGbm){
+  gbmAccFit <- train(classe ~ ., data=modelPreprocessed, method="gbm", trControl=tControl, metric="Accuracy", maximize=T, verbose=F)
+  save(gbmAccFit, file=paste(modelDir, "gbmAccFit.Rda", sep=""))
+  gbmKappaFit <- train(classe ~ ., data=modelPreprocessed, method="gbm", trControl=tControl, metric="Kappa", verbose=F)
+  save(gbmKappaFit, file=paste(modelDir, "gbmKappaFit.Rda", sep=""))
+} else {
+  load(paste(modelDir, "gbmAccFit.Rda", sep=""))
+  load(paste(modelDir, "gbmKappaFit.Rda", sep=""))
+}
+
+gbmAccProbePredicted <- predict(gbmAccFit, probePreprocessed)
+gbmACM <- confusionMatrix(gbmAccProbePredicted, probePreprocessed$classe)
+
+gbmKappaProbePredicted <- predict(gbmKappaFit, probePreprocessed)
+gbmKCM <- confusionMatrix(gbmKappaProbePredicted, probePreprocessed$classe)
+```
+
+#### Estimated Out-Of-Sample Error: Optimized for Accuracy `r gbmACM$overall["Accuracy"] * 100`%
+
+```{r}
+gbmACM$table
+```
+
+#### Estimated Out-Of-Sample Error: Optimized for Kappa Statistic `r gbmKCM$overall["Accuracy"] * 100`%
+
+```{r}
+gbmKCM$table
+```
+
+#### Algorithm 3: Random Forests (Bagging)
+
+Here is a vanilla implementation of a random forests model. This produced the best results. The default implementation uses the Gini coefficient to optimize the out-of-bag error of the model. Further cross-validation is not necessary because error is estimated internally by the training algorithm.
+
+http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr
+
+```{r}
+require(randomForest)
+doRf <- F # Build the model again?
+if(doRf){
+  rfFit <- train(classe ~ ., data=modelPreprocessed, method="rf", prox=T)
+  save(rfFit, file=paste(modelDir, "rfFit.Rda", sep=""))
+} else {
+  load(paste(modelDir, "rfFit.Rda", sep=""))
+}
+rfProbePredicted <- predict(rfFit, probePreprocessed)
+rfCM <- confusionMatrix(rfProbePredicted, probePreprocessed$classe)
+```
+
+#### Estimated Out-Of-Sample Error: Random Forests `r rfCM$overall["Accuracy"] * 100`%
+
+```{r}
+rfCM$table
+```
+
+#### Importance of Predictors:
+
+```{r echo=FALSE}
+pcaRot <- as.data.frame(pcaPreProcessor$rotation)
+pcaRot$origVar <- rownames(pcaRot)
+importanceDf <- varImp(rfFit)$importance
+importanceDf$PC <- rownames(importanceDf)
+importanceDf <- importanceDf[order(-importanceDf$Overall),]
+importanceSummary <- data.frame(FirstVars=character(5), FirstWeights=numeric(5), SecondVars=character(5), SecondWeights=numeric(5), ThirdVars=character(5), ThirdWeights=numeric(5))
+importanceSummary$FirstVars <- pcaRot[order(-abs(pcaRot[,c(importanceDf$PC[1])])),]$origVar[1:5]
+importanceSummary$FirstWeights <- pcaRot[order(-abs(pcaRot[,c(importanceDf$PC[1])])),c(importanceDf$PC[1])][1:5]
+importanceSummary$SecondVars <- pcaRot[order(-abs(pcaRot[,c(importanceDf$PC[2])])),]$origVar[1:5]
+importanceSummary$SecondWeights <- pcaRot[order(-abs(pcaRot[,c(importanceDf$PC[2])])),c(importanceDf$PC[1])][1:5]
+importanceSummary$ThirdVars <- pcaRot[order(-abs(pcaRot[,c(importanceDf$PC[3])])),]$origVar[1:5]
+importanceSummary$ThirdWeights <- pcaRot[order(-abs(pcaRot[,c(importanceDf$PC[3])])),c(importanceDf$PC[1])][1:5]
+```
+
+Listing of top five components of the top three contributing principal components in the final random forest model:
+
+```{r results="asis"}
+kable(importanceSummary)
+```
+
+# Model Performance On Assignment Test Data
+
+**Predictions:**
+
+```{r}
+rfTestPredicted <- predict(rfFit, testPreprocessed)
+data.frame(problemId=testPreprocessed$problemId, prediction=rfTestPredicted)
+submissionDir <- paste0(projectRoot, "\\submission\\")
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0(submissionDir, "problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(rfTestPredicted)
+```
+
+**Grades:**
+
+19/20. Problem number 3 was incorrectly predicted.
+
+# Citations
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+HAR Website: http://groupware.les.inf.puc-rio.br/har
